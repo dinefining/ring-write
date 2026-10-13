@@ -1,0 +1,221 @@
+/* Everything sits on an 8px UI grid. Tiles are separated by a 2px gap.
+   Three states, one meaning each:
+     ink (black)   = this panel is open      (Text, Ctrl, Info only)
+     darker grey   = the current value       (selected options, slider fills)
+     grey text     = not available           (disabled; text that didn't fit)
+   The theme flips with the canvas background. */
+:root {
+  --u: 8px;
+  --gap: 2px;
+  /* one unit, x = the row height; everything is a multiple of it:
+     panel 12x, Text/Ctrl/Info 3x, tiles 3x / 4x / 6x depending on the row */
+  --row: 24px;
+  --panel: calc(var(--row) * 12);
+  --bg: #ffffff;
+  --tile: #e6e6e6;
+  --tile-hover: #dadada;
+  --fill: #c8c8c8;
+  --on: #111111;
+  --on-text: #ffffff;
+  --text: #111111;
+  --muted: #8f8f8f;
+  --ui: "Press Start 2P", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #111111;
+  --tile: #262626;
+  --tile-hover: #303030;
+  --fill: #474747;
+  --on: #ffffff;
+  --on-text: #111111;
+  --text: #ededed;
+  --muted: #7a7a7a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 8px/1.5 var(--ui);
+  overflow: hidden;
+  -webkit-font-smoothing: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; border-radius: 0; }
+:focus-visible { outline: 2px solid var(--on); outline-offset: -2px; }
+
+#stage { position: fixed; inset: 0; overflow: hidden; }
+#canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+
+/* ------------------------------------------------------------ tiles */
+
+.row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--gap); }
+.tile {
+  position: relative;
+  min-height: var(--row);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--u);
+  padding: 0 var(--u);
+  background: var(--tile);
+  color: var(--text);
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* hover never overrides a state, so a click shows straight away */
+button.tile:hover:not(:disabled):not([aria-pressed="true"]):not(.on), .slider:hover { background: var(--tile-hover); }
+/* open panel */
+.tile[aria-pressed="true"], .tile.on { background: var(--on); color: var(--on-text); }
+/* current value inside a panel */
+.panel .tile[aria-pressed="true"] { background: var(--fill); color: var(--text); }
+.tile:disabled { color: var(--muted); cursor: default; }
+
+.slider { cursor: ew-resize; touch-action: pan-y; overflow: hidden; }
+.slider .fill { position: absolute; inset: 0 auto 0 0; background: var(--fill); }
+.slider .label { position: relative; }
+
+/* ------------------------------------------------------------ floating controls */
+
+#ui {
+  position: absolute;
+  left: calc(var(--u) * 2);
+  top: calc(var(--u) * 2);
+  width: var(--panel);
+  max-height: calc(100% - var(--u) * 4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  z-index: 3;
+}
+#bar { width: calc(var(--row) * 6 + var(--gap)); }
+.panel { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; }
+.panel[hidden] { display: none; }
+
+/* text box: the text scrolls inside the tile; the count is pinned to the bottom.
+   A mirror behind the textarea greys out what didn't fit. */
+.textbox { display: flex; flex-direction: column; align-items: stretch; padding: 0; white-space: normal; }
+.textbox .scroll {
+  max-height: min(45vh, 336px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(var(--u) * 2);
+  scrollbar-width: none;
+}
+.textbox .scroll::-webkit-scrollbar { display: none; }
+.textbox { position: relative; }
+.textbox .track { position: absolute; right: 2px; width: 4px; }
+.textbox .track[hidden] { display: none; }
+.textbox .thumb { width: 100%; background: var(--fill); cursor: ns-resize; touch-action: none; }
+.textbox .thumb:hover, .textbox .thumb.drag { background: var(--muted); }
+.textwrap { position: relative; }
+.textwrap .text, .textwrap .mirror {
+  font: 8px/2 var(--ui);
+  letter-spacing: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.textwrap .mirror { position: absolute; inset: 0; pointer-events: none; color: var(--text); }
+.textwrap .mirror .off { color: var(--muted); }
+.textwrap .text {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: calc(var(--u) * 12);
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  outline: none;
+}
+.textwrap .text::selection { background: var(--fill); color: transparent; }
+.textbox .status {
+  padding: var(--u) calc(var(--u) * 2);
+  border-top: var(--gap) solid var(--bg);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ info */
+
+#info-btn {
+  position: absolute;
+  right: calc(var(--u) * 2);
+  bottom: calc(var(--u) * 2);
+  width: calc(var(--row) * 3);
+  z-index: 3;
+}
+#info {
+  position: absolute;
+  right: calc(var(--u) * 2);
+  bottom: calc(var(--u) * 2 + var(--row) + var(--gap));
+  width: var(--panel);
+  z-index: 3;
+}
+#info .about { display: block; padding: calc(var(--u) * 2); line-height: 2; white-space: normal; }
+#info .about p { margin: 0; }
+#info .about p + p { margin-top: calc(var(--u) * 2); }
+#info a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+#info a:hover { background: var(--on); color: var(--on-text); text-decoration: none; }
+
+/* ------------------------------------------------------------ hint + toast */
+
+#hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--u) * 3);
+  transform: translate(-50%, 6px);
+  color: var(--text);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s, transform 0.5s;
+}
+#hint.show { opacity: 1; transform: translate(-50%, 0); }
+
+#toast {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--u) * 2);
+  transform: translate(-50%, -8px);
+  max-width: calc(100% - var(--u) * 4);
+  padding: calc(var(--u) * 2);
+  background: var(--on);
+  color: var(--on-text);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s, transform 0.18s;
+  z-index: 6;
+  text-align: center;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ------------------------------------------------------------ phone: panels go full width */
+
+@media (max-width: 560px) {
+  :root { --row: 36px; }
+  #ui {
+    left: var(--u);
+    right: var(--u);
+    top: calc(env(safe-area-inset-top, 0px) + var(--u));
+    width: auto;
+    max-height: calc(100% - var(--u) * 2 - var(--row) - env(safe-area-inset-top, 0px));
+  }
+  #p-ctrl { overflow-y: auto; }
+  #info { left: var(--u); right: var(--u); width: auto; bottom: calc(var(--u) + var(--row) + var(--gap) + env(safe-area-inset-bottom, 0px)); }
+  #info-btn { right: var(--u); bottom: calc(var(--u) + env(safe-area-inset-bottom, 0px)); }
+  #hint { bottom: calc(var(--u) * 2 + var(--row)); white-space: normal; text-align: center; width: 70%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; }
+}
