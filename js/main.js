@@ -10,7 +10,7 @@ import { decodeDoc, deliver, stamp, coarse } from './io.js';
 
 const STORE = 'ring_write.cells.v5'; // bumped when the opening piece changes
 const HINTED = 'ring_write.hinted';
-const FONT = 'Press Start 2P';
+const FONT = 'Chakra Petch';
 
 const gridSize = () => app.doc.s.grid;
 const letterSize = () => (SIZES.find(z => z[0] === gridSize()) || SIZES[0])[1];
