@@ -19,7 +19,7 @@
   --on-text: #ffffff;
   --text: #111111;
   --muted: #8f8f8f;
-  --ui: "Press Start 2P", ui-monospace, Menlo, monospace;
+  --ui: "Chakra Petch", ui-monospace, Menlo, monospace;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
