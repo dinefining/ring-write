@@ -1,16 +1,17 @@
 /* Everything sits on an 8px UI grid. Tiles are separated by a 2px gap.
+   Type is Monaspace Krypton, medium weight; labels are lowercase.
    Three states, one meaning each:
-     ink (black)   = this panel is open      (Text, Ctrl, Info only)
+     ink (black)   = this panel is open      (text, controls, info only)
      darker grey   = the current value       (selected options, slider fills)
      grey text     = not available           (disabled; text that didn't fit)
    The theme flips with the canvas background. */
 :root {
   --u: 8px;
   --gap: 2px;
-  /* one unit, x = the row height; everything is a multiple of it:
-     panel 12x, Text/Ctrl/Info 3x, tiles 3x / 4x / 6x depending on the row */
-  --row: 24px;
-  --panel: calc(var(--row) * 12);
+  /* one unit, x = the row height; widths are multiples of it:
+     panel 14x, text/controls 7x each, info 3x */
+  --row: 20px;
+  --panel: calc(var(--row) * 14);
   --bg: #ffffff;
   --tile: #e6e6e6;
   --tile-hover: #dadada;
@@ -19,7 +20,7 @@
   --on-text: #ffffff;
   --text: #111111;
   --muted: #8f8f8f;
-  --ui: "Press Start 2P", ui-monospace, Menlo, monospace;
+  --ui: "Monaspace Krypton", ui-monospace, Menlo, monospace;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -40,12 +41,13 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 8px/1.5 var(--ui);
+  font: 500 11px/1.5 var(--ui);
+  letter-spacing: 0.04em;
   overflow: hidden;
-  -webkit-font-smoothing: none;
+  -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
-button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; border-radius: 0; }
+button { font: inherit; letter-spacing: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; border-radius: 0; }
 :focus-visible { outline: 2px solid var(--on); outline-offset: -2px; }
 
 #stage { position: fixed; inset: 0; overflow: hidden; }
@@ -93,7 +95,7 @@ button.tile:hover:not(:disabled):not([aria-pressed="true"]):not(.on), .slider:ho
   gap: var(--gap);
   z-index: 3;
 }
-#bar { width: calc(var(--row) * 6 + var(--gap)); }
+#bar { width: 100%; }
 .panel { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; }
 .panel[hidden] { display: none; }
 
@@ -115,8 +117,8 @@ button.tile:hover:not(:disabled):not([aria-pressed="true"]):not(.on), .slider:ho
 .textbox .thumb:hover, .textbox .thumb.drag { background: var(--muted); }
 .textwrap { position: relative; }
 .textwrap .text, .textwrap .mirror {
-  font: 8px/2 var(--ui);
-  letter-spacing: 0;
+  font: 500 12px/1.6 var(--ui);
+  letter-spacing: 0.02em;
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-break: normal;
@@ -161,10 +163,10 @@ button.tile:hover:not(:disabled):not([aria-pressed="true"]):not(.on), .slider:ho
   width: var(--panel);
   z-index: 3;
 }
-#info .about { display: block; padding: calc(var(--u) * 2); line-height: 2; white-space: normal; }
+#info .about { display: block; padding: calc(var(--u) * 2); font-size: 12px; line-height: 1.6; letter-spacing: 0.02em; white-space: normal; }
 #info .about p { margin: 0; }
 #info .about p + p { margin-top: calc(var(--u) * 2); }
-#info a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+#info a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
 #info a:hover { background: var(--on); color: var(--on-text); text-decoration: none; }
 
 /* ------------------------------------------------------------ hint + toast */
@@ -202,7 +204,7 @@ button.tile:hover:not(:disabled):not([aria-pressed="true"]):not(.on), .slider:ho
 /* ------------------------------------------------------------ phone: panels go full width */
 
 @media (max-width: 560px) {
-  :root { --row: 36px; }
+  :root { --row: 32px; }
   #ui {
     left: var(--u);
     right: var(--u);
