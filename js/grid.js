@@ -3,10 +3,9 @@
 
 export const key = (i, j) => i + ',' + j;
 
-// Press Start 2P is drawn on an 8px grid, so letters stay sharp at multiples
-// of 8. Each grid size pairs a letter with a cell a little bigger than it, and
-// the difference is even so letters sit on whole pixels. [cell, letter]
-export const SIZES = [[12, 8], [22, 16], [34, 24]];
+// Each grid size pairs a cell with a letter size (Monaspace Krypton) that fills it
+// without touching its neighbours. [cell, letter]
+export const SIZES = [[12, 10], [22, 18], [34, 28]];
 
 export const unkey = k => k.split(',').map(Number);
 
