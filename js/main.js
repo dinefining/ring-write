@@ -10,13 +10,14 @@ import { decodeDoc, deliver, stamp, coarse } from './io.js';
 
 const STORE = 'ring_write.cells.v5'; // bumped when the opening piece changes
 const HINTED = 'ring_write.hinted';
-const FONT = 'Chakra Petch';
+const FONT = 'Monaspace Krypton';
+const WEIGHT = 500;
 
 const gridSize = () => app.doc.s.grid;
 const letterSize = () => (SIZES.find(z => z[0] === gridSize()) || SIZES[0])[1];
 
 const DEFAULTS = {
-  grid: 12, brush: 3, fill: 'repeat', outline: false,
+  grid: 12, brush: 3, fill: 'repeat', outline: false, corners: false,
   bg: 'white', shape: 'white',
 };
 
@@ -147,7 +148,7 @@ function touchLayout() { app.dirtyLayout = true; app.needs = true; }
 app.set = (k, val) => {
   app.doc.s[k] = val;
   if (k === 'bg') applyTheme();
-  if (k === 'grid') touchGeom(); else touchLayout();
+  if (k === 'grid' || k === 'corners') touchGeom(); else touchLayout();
 };
 
 app.setText = str => {
@@ -254,7 +255,7 @@ async function exportImage(kind) {
 // ---------------------------------------------------------------- geometry + layout
 
 function fontStr() {
-  return `${letterSize()}px "${FONT}", monospace`;
+  return `${WEIGHT} ${letterSize()}px "${FONT}", monospace`;
 }
 
 function computeGeom() {
@@ -271,7 +272,7 @@ function computeGeom() {
   alignStarts(rings);
   rings.forEach(prepRing);
   app.rings = rings;
-  app.groups = slotGroups(rings, live, g);
+  app.groups = slotGroups(rings, live, g, app.doc.s.corners);
   app.liveCount = live.size;
   app.dirtyLayout = true;
 }
@@ -428,7 +429,7 @@ async function start() {
   computeGeom();
   panel.sync();
   app.commit();
-  document.fonts.load(`16px "${FONT}"`, 'abc').then(() => { app.needs = true; }).catch(() => {});
+  document.fonts.load(`${WEIGHT} 16px "${FONT}"`, 'abc').then(() => { app.needs = true; }).catch(() => {});
 
   let hinted = false;
   try { hinted = localStorage.getItem(HINTED) === '1'; } catch {}
