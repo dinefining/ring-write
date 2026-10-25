@@ -81,6 +81,22 @@ button.tile:hover:not(:disabled):not([aria-pressed="true"]):not(.on), .slider:ho
 .slider { cursor: ew-resize; touch-action: pan-y; overflow: hidden; }
 .slider .fill { position: absolute; inset: 0 auto 0 0; background: var(--fill); }
 .slider .label { position: relative; }
+/* highlight colours: four swatches side by side, each opens the colour picker */
+.swatches { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); min-height: var(--row); background: var(--tile); }
+.swatch { cursor: pointer; background: var(--c); }
+.swatch:hover:not(:disabled) { box-shadow: inset 0 0 0 2px var(--on); }
+/* off: solid, faded into the tile so it reads as unavailable but still hints at the colours */
+.swatch:disabled { background: color-mix(in srgb, var(--c) 18%, var(--tile)); cursor: default; }
+.swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--on); }
+/* the picker: saturation/brightness square, hue strip, hex field */
+.picker { flex-direction: column; align-items: stretch; gap: var(--gap); padding: var(--u); }
+.picker[hidden] { display: none; }
+.picker .sv { position: relative; height: calc(var(--row) * 6); cursor: crosshair; touch-action: none; }
+.picker .hue { position: relative; height: calc(var(--row) * 0.6); cursor: ew-resize; touch-action: none;
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
+.picker .dot { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; box-shadow: 0 0 0 1px #111, inset 0 0 0 1px #fff; pointer-events: none; }
+.picker .hue .dot { top: -2px; height: calc(100% + 4px); margin-top: 0; }
+.picker .hex { font: inherit; letter-spacing: inherit; color: var(--text); background: var(--bg); border: 0; padding: 0 var(--u); height: var(--row); outline: none; }
 
 /* ------------------------------------------------------------ floating controls */
 
