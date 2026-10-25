@@ -223,7 +223,7 @@ export function buildPanel(app) {
 
   r = row(ctrlP);
   button(r, 'repeat', { onClick: choose('fill', 'repeat'), pressed: () => S().fill === 'repeat' });
-  button(r, 'empty', { onClick: choose('fill', 'empty'), pressed: () => S().fill === 'empty' });
+  button(r, 'once', { aria: 'Write the text once', onClick: choose('fill', 'empty'), pressed: () => S().fill === 'empty' });
 
   r = row(ctrlP);
   button(r, 'undo', { onClick: () => app.action('undo'), disabled: () => !app.canUndo() });
