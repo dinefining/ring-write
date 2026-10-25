@@ -2,6 +2,12 @@
 // The world origin is the centre of the artboard; cell (i, j) covers
 // [i·g, (i+1)·g] × [j·g, (j+1)·g]. UI overlays come from a callback so exports skip them.
 
+// perceived brightness of a #rrggbb colour, 0..1
+function luma(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+}
+
 function addPoly(path, pts) {
   if (!pts.length) return;
   path.moveTo(pts[0][0], pts[0][1]);
@@ -9,7 +15,9 @@ function addPoly(path, pts) {
   path.closePath();
 }
 
-// o: { W, H, dpr, view, s (with colors), board, loops, glyphs, font, grid, transparent, overlay }
+// o: { W, H, dpr, view, s (with colors), board, loops, glyphs, tint, fonts, grid, transparent, overlay }
+// glyphs carry their cell size g; fonts maps cell size -> canvas font
+// tint: [x, y, size, colour index] per cell, when the highlight is on
 export function drawScene(ctx, o) {
   const { s, view, dpr, board: b } = o;
   const g = s.grid, col = s.colors;
@@ -42,13 +50,28 @@ export function drawScene(ctx, o) {
   ctx.fillStyle = col.fill;
   ctx.fill(shape, 'evenodd');
 
+  if (o.tint && col.tints) {
+    for (const [x, y, z, c] of o.tint) {
+      ctx.fillStyle = col.tints[c];
+      ctx.fillRect(x, y, z, z);
+    }
+  }
+
   if (o.glyphs.length) {
-    ctx.font = o.font;
+    let font = null;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = col.text;
+    // on highlighted cells the text takes whichever of ink or paper reads better on that colour
+    const tintAt = o.tint && col.tints ? new Map(o.tint.map(([x, y, z, c]) => [x + ',' + y, c])) : null;
+    const onTint = col.tints ? col.tints.map(c => (luma(c) > 0.55 ? '#111111' : '#ffffff')) : null;
     for (const gl of o.glyphs) {
       if (gl.ch === ' ') continue;
+      if (o.fonts[gl.g] !== font) ctx.font = font = o.fonts[gl.g];
+      if (tintAt) {
+        const c = tintAt.get(Math.floor(gl.x / gl.g) * gl.g + ',' + Math.floor(gl.y / gl.g) * gl.g);
+        ctx.fillStyle = c === undefined ? col.text : onTint[c];
+      }
       const c = Math.round(Math.cos(gl.a)) * k, sn = Math.round(Math.sin(gl.a)) * k;
       ctx.setTransform(c, sn, -sn, c, Math.round(gl.x * k + tx), Math.round(gl.y * k + ty));
       ctx.fillText(gl.ch, 0, 0);
@@ -58,9 +81,10 @@ export function drawScene(ctx, o) {
 
   // a fine outline: whole device pixels, nudged onto the pixel grid so it stays crisp
   if (col.line && o.loops.length) {
-    // dark lines on white read thinner than light lines on black, so they get a touch more weight
+    // dark lines on white read thinner than light lines on black, so they get a touch more weight;
+    // the weight follows the grid (tuned at 22, finer at 12, heavier at 34)
     const dark = col.stroke !== '#ffffff';
-    const w = Math.max(1, Math.round(k * (dark ? 0.9 : 0.6))), nudge = (w % 2) / 2;
+    const w = Math.max(1, Math.round(k * (dark ? 0.9 : 0.6) * (g / 22))), nudge = (w % 2) / 2;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.beginPath();
     for (const l of o.loops) {

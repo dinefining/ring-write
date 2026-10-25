@@ -1,4 +1,4 @@
-// Floating controls: two buttons (TEXT, CTRL), each opening a panel of tiles.
+// Floating controls: two buttons (text, controls), each opening a panel of tiles.
 // Panels stack when both are open. Tiles follow one rule set: grey tile,
 // darker fill for slider values, solid ink for whatever is on.
 import { clamp, el, $ } from './util.js';
@@ -110,7 +110,7 @@ export function buildPanel(app) {
     try { localStorage.setItem(PREFS, JSON.stringify({ open })); } catch {}
     if (open === 'text') { grow(); syncThumb(); }
   };
-  for (const [name, label] of [['text', 'Text'], ['ctrl', 'Ctrl']]) {
+  for (const [name, label] of [['text', 'text'], ['ctrl', 'controls']]) {
     const b = button(bar, label, { onClick: () => { open = open === name ? null : name; show(); }, pressed: () => open === name });
     b.setAttribute('aria-controls', 'p-' + name);
   }
@@ -170,32 +170,70 @@ export function buildPanel(app) {
 
   // ---------- controls panel
   let r = row(ctrlP);
-  slider(r, { key: 'grid', label: 'Grid', values: SIZES.map(z => z[0]), fmt: v => `Grid ${v}` });
-  slider(r, { key: 'brush', label: 'Brush', values: [1, 2, 3, 4, 5], fmt: v => `Brush ${v}` });
+  slider(r, { key: 'grid', label: 'grid', values: SIZES.map(z => z[0]), fmt: v => `grid ${v}` });
+  slider(r, { key: 'brush', label: 'brush', values: [1, 2, 3, 4, 5], fmt: v => `brush ${v}` });
 
-  // on = black. The outline only matters when shape and background match.
+  // on = black. The border only matters when shape and background match.
   r = row(ctrlP);
   const flip = k => () => { app.set(k, S()[k] === 'black' ? 'white' : 'black'); app.commit(); };
-  button(r, 'BG', { aria: 'Black background', onClick: flip('bg'), pressed: () => S().bg === 'black' });
-  button(r, 'Shape', { aria: 'Black shape', onClick: flip('shape'), pressed: () => S().shape === 'black' });
-  button(r, 'Line', {
-    aria: 'Outline', onClick: () => { app.set('outline', !S().outline); app.commit(); },
-    pressed: () => !!S().outline && S().bg === S().shape, disabled: () => S().bg !== S().shape,
+  button(r, 'bg', { aria: 'Black background', onClick: flip('bg'), pressed: () => S().bg === 'black' });
+  button(r, 'shape', { aria: 'Black shape', onClick: flip('shape'), pressed: () => S().shape === 'black' });
+  button(r, 'border', {
+    aria: 'Border', onClick: () => { app.set('outline', !S().outline); app.commit(); },
+    pressed: () => !!S().outline && S().bg === S().shape && !S().color, disabled: () => S().bg !== S().shape || !!S().color,
+  });
+
+  // highlight each repeat of the text. Each swatch opens our own picker under
+  // the row (the system one can't be closed from the page); the same swatch closes it.
+  // Swatches are greyed out while the highlight is off.
+  r = row(ctrlP);
+  button(r, 'colour', {
+    aria: 'Highlight each repeat',
+    onClick: () => { app.set('color', !S().color); if (!S().color) editing = -1; app.commit(); },
+    pressed: () => !!S().color,
+  });
+  const sw = el('div', 'swatches');
+  const swatches = [];
+  let editing = -1;
+  for (let n = 0; n < 4; n++) {
+    const b = el('button', 'swatch');
+    b.type = 'button';
+    b.setAttribute('aria-label', `Highlight colour ${n + 1}`);
+    b.addEventListener('click', () => { editing = editing === n ? -1 : n; syncAll(); });
+    sw.appendChild(b);
+    swatches.push(b);
+  }
+  r.appendChild(sw);
+  const pick = buildPicker(ctrlP, hex => {
+    if (editing < 0) return;
+    const t = S().tints.slice();
+    t[editing] = hex;
+    app.set('tints', t);
+    swatches[editing].style.setProperty('--c', hex);
+  }, () => app.commit());
+  syncs.push(() => {
+    if (!S().color) editing = -1;
+    swatches.forEach((b, n) => {
+      b.style.setProperty('--c', S().tints[n]);
+      b.disabled = !S().color;
+      b.setAttribute('aria-pressed', editing === n);
+    });
+    pick.show(editing >= 0 ? S().tints[editing] : null);
   });
 
   r = row(ctrlP);
-  button(r, 'Repeat', { onClick: choose('fill', 'repeat'), pressed: () => S().fill === 'repeat' });
-  button(r, 'Empty', { onClick: choose('fill', 'empty'), pressed: () => S().fill === 'empty' });
+  button(r, 'repeat', { onClick: choose('fill', 'repeat'), pressed: () => S().fill === 'repeat' });
+  button(r, 'empty', { onClick: choose('fill', 'empty'), pressed: () => S().fill === 'empty' });
 
   r = row(ctrlP);
-  button(r, 'Undo', { onClick: () => app.action('undo'), disabled: () => !app.canUndo() });
-  button(r, 'Redo', { onClick: () => app.action('redo'), disabled: () => !app.canRedo() });
-  button(r, 'Clear', { onClick: () => app.action('clear') });
-  button(r, 'Reset', { onClick: () => app.action('reset') });
+  button(r, 'undo', { onClick: () => app.action('undo'), disabled: () => !app.canUndo() });
+  button(r, 'redo', { onClick: () => app.action('redo'), disabled: () => !app.canRedo() });
+  button(r, 'clear', { onClick: () => app.action('clear') });
+  button(r, 'reset', { onClick: () => app.action('reset') });
 
   r = row(ctrlP);
-  button(r, 'JPG', { onClick: () => app.action('jpg') });
-  button(r, 'PNG', { onClick: () => app.action('png') });
+  button(r, 'jpg', { onClick: () => app.action('jpg') });
+  button(r, 'png', { onClick: () => app.action('png') });
 
   show();
 
@@ -217,4 +255,85 @@ export function buildPanel(app) {
   }
 
   return { sync: syncAll, updateText };
+}
+
+// A small colour picker: saturation/brightness square, hue strip, hex field.
+// onInput(hex) while dragging or typing, onDone() when a change is finished.
+function buildPicker(parent, onInput, onDone) {
+  const box = el('div', 'tile picker');
+  box.hidden = true;
+  const sv = el('div', 'sv'), svDot = el('i', 'dot');
+  const hue = el('div', 'hue'), hueDot = el('i', 'dot');
+  const hex = el('input', 'hex');
+  hex.spellcheck = false;
+  hex.maxLength = 7;
+  hex.setAttribute('aria-label', 'Hex colour');
+  sv.appendChild(svDot);
+  hue.appendChild(hueDot);
+  box.append(sv, hue, hex);
+  parent.appendChild(box);
+  let h = 0, sat = 0, val = 0, current = null;
+
+  const paint = () => {
+    sv.style.background = `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${h}, 100%, 50%))`;
+    svDot.style.left = sat * 100 + '%';
+    svDot.style.top = (1 - val) * 100 + '%';
+    hueDot.style.left = (h / 360) * 100 + '%';
+  };
+  const emit = () => {
+    current = hsvToHex(h, sat, val);
+    if (document.activeElement !== hex) hex.value = current;
+    paint();
+    onInput(current);
+  };
+  const drag = (elm, fn) => {
+    elm.addEventListener('pointerdown', e => {
+      elm.setPointerCapture(e.pointerId);
+      fn(e);
+      const move = ev => fn(ev);
+      const up = () => { elm.removeEventListener('pointermove', move); elm.removeEventListener('pointerup', up); elm.removeEventListener('pointercancel', up); onDone(); };
+      elm.addEventListener('pointermove', move);
+      elm.addEventListener('pointerup', up);
+      elm.addEventListener('pointercancel', up);
+    });
+  };
+  const frac = (e, elm, axis) => {
+    const r = elm.getBoundingClientRect();
+    return axis === 'x' ? clamp((e.clientX - r.left) / r.width, 0, 1) : clamp((e.clientY - r.top) / r.height, 0, 1);
+  };
+  drag(sv, e => { sat = frac(e, sv, 'x'); val = 1 - frac(e, sv, 'y'); emit(); });
+  drag(hue, e => { h = frac(e, hue, 'x') * 360; emit(); });
+  hex.addEventListener('input', () => {
+    let v = hex.value.trim();
+    if (!v.startsWith('#')) v = '#' + v;
+    if (!/^#[0-9a-f]{6}$/i.test(v)) return;
+    [h, sat, val] = hexToHsv(v.toLowerCase());
+    emit();
+  });
+  hex.addEventListener('change', () => { hex.value = current; onDone(); });
+
+  return {
+    // show(hex) opens it on that colour; show(null) closes it
+    show(c) {
+      box.hidden = !c;
+      if (!c || c === current) return;
+      current = c;
+      [h, sat, val] = hexToHsv(c);
+      hex.value = c;
+      paint();
+    },
+  };
+}
+
+function hexToHsv(c) {
+  const n = parseInt(c.slice(1), 16), r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [(h * 60 + 360) % 360, mx ? d / mx : 0, mx];
+}
+
+function hsvToHex(h, s, v) {
+  const f = k => { const x = (k + h / 60) % 6; return v - v * s * Math.max(0, Math.min(x, 4 - x, 1)); };
+  return '#' + [f(5), f(3), f(1)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
 }

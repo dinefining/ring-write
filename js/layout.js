@@ -1,13 +1,13 @@
 // One letter per cell. Text walks each ring cell by cell, turning with it.
-//   · a corner cell stays empty only at a real corner (both sides 3+ cells), so
-//     corners read as a clean frame, while stair-steps still carry letters
+//   · every corner cell gets a letter, facing the way the text came in; the
+//     next letter turns
 //   · a cell is only ever used once, even where rings touch or double back
-//   · whatever the rings leave over (centre lines, odd bits) is filled with
-//     plain horizontal lines, then vertical ones
+//   · whatever the rings leave over (thin strips, centre lines, odd bits) is
+//     walked cell by cell as a path, starting where it was painted first
 // Positions don't depend on the text, so the slots are worked out first and
 // the text is poured into them afterwards.
 
-export const SEP = Array.from(' · ');
+export const SEP = [' '];
 
 export function prepRing(r) {
   const p = r.pts, n = p.length;
@@ -27,55 +27,90 @@ export function applyCase(chars, mode) {
   return chars;
 }
 
-// rings: prepared rings · cells: Set of painted "i,j" · g: cell size
-// → groups of slots; each group is one ring or one leftover line
+// rings: prepared rings · cells: Set of painted "i,j", in the order they were painted
+// g: cell size
+// → groups of slots; each group is one ring or one leftover path
 export function slotGroups(rings, cells, g) {
   const used = new Set(), groups = [];
   const keyAt = (x, y) => Math.floor(x / g) + ',' + Math.floor(y / g);
 
   for (const r of rings) {
-    const n = r.runs.length, long = r.runs.map(run => run.L >= 3 * g - 0.01);
     const slots = [];
-    r.runs.forEach((run, k) => {
-      const last = long[k] && long[(k + 1) % n] ? run.L - g : run.L;
-      for (let s = g; s <= last + 0.01; s += g) {
+    for (const run of r.runs) {
+      for (let s = g; s <= run.L + 0.01; s += g) {
         const x = run.a[0] + run.dx * s, y = run.a[1] + run.dy * s, key = keyAt(x, y);
         if (used.has(key) || !cells.has(key)) continue;
         used.add(key);
         slots.push({ x, y, a: run.ang });
       }
-    });
+    }
     if (slots.length) groups.push(slots);
   }
 
-  // leftovers: horizontal stretches of 2+ cells, then vertical ones
-  const left = [...cells].filter(k => !used.has(k)).map(k => k.split(',').map(Number));
-  const stretches = (byLine, along, horizontal) => {
-    for (const line of [...byLine.keys()].sort((a, b) => a - b)) {
-      const xs = byLine.get(line).filter(v => !used.has(horizontal ? v + ',' + line : line + ',' + v)).sort((a, b) => a - b);
-      let run = [];
-      const flush = () => {
-        if (run.length >= 2) {
-          groups.push(run.map(v => {
-            used.add(horizontal ? v + ',' + line : line + ',' + v);
-            return horizontal ? { x: (v + 0.5) * g, y: (line + 0.5) * g, a: 0 } : { x: (line + 0.5) * g, y: (v + 0.5) * g, a: Math.PI / 2 };
-          }));
-        }
-        run = [];
-      };
-      for (const v of xs) { if (run.length && v !== run[run.length - 1] + 1) flush(); run.push(v); }
-      flush();
-    }
+  // Leftovers (strips too thin for a ring, centre lines, odd bits) are walked
+  // cell by cell as paths: from the end painted first, straight on where
+  // possible, otherwise the way the painting went. Each letter faces the way
+  // the path came in, so it turns on the cell after a corner, like the rings.
+  const order = new Map();
+  let idx = 0;
+  for (const k of cells) order.set(k, idx++);
+  const left = new Set([...cells].filter(k => !used.has(k)));
+  const queue = [...left]; // already in painting order
+  let qi = 0;
+  // neighbours along a path: edge neighbours, plus corner-only steps (a fast
+  // drag paints diagonals) when no edge neighbour links the two already
+  const orth = k => {
+    const [i, j] = k.split(',').map(Number);
+    return [[i + 1, j], [i, j + 1], [i - 1, j], [i, j - 1]].map(([a, b]) => a + ',' + b).filter(q => left.has(q));
   };
-  const rows = new Map(), cols = new Map();
-  for (const [i, j] of left) {
-    if (!rows.has(j)) rows.set(j, []);
-    rows.get(j).push(i);
-    if (!cols.has(i)) cols.set(i, []);
-    cols.get(i).push(j);
+  const diag = k => {
+    const [i, j] = k.split(',').map(Number);
+    return [[1, 1], [1, -1], [-1, 1], [-1, -1]]
+      .filter(([a, b]) => left.has((i + a) + ',' + (j + b)) && !left.has((i + a) + ',' + j) && !left.has(i + ',' + (j + b)))
+      .map(([a, b]) => (i + a) + ',' + (j + b));
+  };
+  const nbrs = k => orth(k).concat(diag(k));
+  const byOrder = (a, b) => order.get(a) - order.get(b);
+  const paths = [];
+  while (left.size) {
+    // the earliest-painted cell picks the piece
+    while (!left.has(queue[qi])) qi++;
+    const first = queue[qi];
+    // start from the end closest (along the path) to where painting began
+    const hops = new Map([[first, 0]]), bfs = [first];
+    for (let h = 0; h < bfs.length; h++) for (const q of nbrs(bfs[h])) if (!hops.has(q)) { hops.set(q, hops.get(bfs[h]) + 1); bfs.push(q); }
+    const ends = bfs.filter(k => nbrs(k).length <= 1).sort((a, b) => hops.get(a) - hops.get(b) || byOrder(a, b));
+    let cur = ends[0] || first, prev = null;
+    const path = [];
+    while (cur) {
+      left.delete(cur);
+      path.push(cur);
+      const next = nbrs(cur);
+      if (!next.length) break;
+      let pick = null;
+      if (prev) {
+        const [pi, pj] = prev.split(',').map(Number), [ci, cj] = cur.split(',').map(Number);
+        const straight = (2 * ci - pi) + ',' + (2 * cj - pj);
+        if (next.includes(straight)) pick = straight;
+      }
+      const edge = next.filter(q => orth(cur).includes(q));
+      prev = cur;
+      cur = pick || (edge.length ? edge : next).sort(byOrder)[0];
+    }
+    if (path.length >= 2) paths.push(path);
   }
-  stretches(rows, 0, true);
-  stretches(cols, 1, false);
+  for (const path of paths) {
+    const pts = path.map(k => k.split(',').map(Number));
+    let a = 0;
+    groups.push(pts.map(([i, j], m) => {
+      const [fi, fj] = m ? pts[m - 1] : [i, j], [ti, tj] = m ? [i, j] : pts[1];
+      const dx = ti - fi, dy = tj - fj;
+      // a diagonal step keeps the way the path was already going, so letters stay upright or on their side
+      if (!dx || !dy) a = Math.atan2(dy, dx);
+      else if (!m) a = Math.atan2(0, dx);
+      return { x: (i + 0.5) * g, y: (j + 0.5) * g, a };
+    }));
+  }
   return groups;
 }
 
@@ -103,7 +138,7 @@ export function pour(groups, chars, s) {
       i++;
       if (c.ch === '\n') { if (k) return; continue; }
       const sl = slots[k++];
-      c.x = sl.x; c.y = sl.y; c.a = sl.a; c.ring = gi;
+      c.x = sl.x; c.y = sl.y; c.a = sl.a; c.g = sl.g; c.ring = gi;
       out.glyphs.push(c);
     }
   });

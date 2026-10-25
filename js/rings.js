@@ -64,7 +64,9 @@ export function insideRings(loops, g, minLen) {
   const roots = [];
   let prev = null, maxLevel = 0;
   for (let level = 0; level < 600; level++) {
-    const regs = regions(offset(base, -g * (level + 0.5)));
+    // strips one cell wide inset to nothing; Clipper can leave zero-width slivers
+    // behind, so anything smaller than half a cell is dropped (the layout walks those strips instead)
+    const regs = regions(offset(base, -g * (level + 0.5))).filter(r => r.area >= 0.5 * g * g);
     if (!regs.length) break;
     const nodes = regs.map(reg => ({ reg, level, kids: [] }));
     for (const nd of nodes) {

@@ -8,16 +8,18 @@ import { buildPanel } from './panel.js';
 import { initInput } from './input.js';
 import { decodeDoc, deliver, stamp, coarse } from './io.js';
 
-const STORE = 'ring_write.cells.v5'; // bumped when the opening piece changes
+const STORE = 'ring_write.cells.v7'; // bumped when the opening piece or the cell format changes
+const OLD_STORES = ['ring_write.cells.v6', 'ring_write.cells.v5'];
 const HINTED = 'ring_write.hinted';
 const FONT = 'Monaspace Krypton';
 const WEIGHT = 500;
 
 const gridSize = () => app.doc.s.grid;
-const letterSize = () => (SIZES.find(z => z[0] === gridSize()) || SIZES[0])[1];
+const FONTS = Object.fromEntries(SIZES.map(([g, l]) => [g, `${WEIGHT} ${l}px "${FONT}", monospace`]));
 
 const DEFAULTS = {
-  grid: 12, brush: 3, fill: 'repeat', outline: false, corners: false,
+  grid: 12, brush: 3, fill: 'repeat', outline: false,
+  color: false, tints: ['#ffe14d', '#7fb2ff', '#7fdc85', '#ff8a80'],
   bg: 'white', shape: 'white',
 };
 
@@ -29,9 +31,11 @@ function colorsOf(s) {
     bg: s.bg === 'black' ? INK : PAPER,
     fill: s.shape === 'black' ? INK : PAPER,
     text: s.shape === 'black' ? PAPER : INK,
+    // the highlight colours each repeat of the text; render picks the text colour per cell
+    tints: s.color ? s.tints : null,
     stroke: s.bg === 'black' ? PAPER : INK,
-    // the outline is only drawn where shape and background are the same colour
-    line: s.outline && s.bg === s.shape,
+    // the outline is only drawn where shape and background are the same colour, and not over the highlight
+    line: s.outline && s.bg === s.shape && !s.color,
   };
 }
 
@@ -49,7 +53,7 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const app = {
   canvas,
   doc: null,
-  cells: new Set(),
+  cells: new Set(), // "i,j", in the order they were painted
   view: { x: 0, y: 0, scale: 1 },
   hover: null,
   loops: [], rings: [], groups: [], layout: null,
@@ -70,16 +74,33 @@ function freshDoc() {
   const rw = Math.max(4, Math.floor((b.w * 0.3) / s.grid)), rh = Math.max(3, Math.floor((b.h * 0.3) / s.grid));
   const cells = [];
   for (let j = -rh; j < rh; j++) for (let i = -rw; i < rw; i++) cells.push(key(i, j));
-  return { v: 6, cells, text: SAMPLE, s };
+  return { v: 8, cells, text: SAMPLE, s };
 }
 
 function normalize(d) {
   const s = { ...structuredClone(DEFAULTS), ...(d && d.s) };
   for (const k of Object.keys(s)) if (!(k in DEFAULTS)) delete s[k];
+  let raw = Array.isArray(d && d.cells) ? d.cells.filter(c => typeof c === 'string') : [];
+  // a short-lived version mixed cell sizes, stored as "m,i,j" (m = 1, 2, 3 twelve-pixel units):
+  // one size comes back as that grid; mixed sizes come back as 12px cells, same shape
+  if (d && d.v === 7) {
+    const cs = raw.filter(c => /^[123],-?\d+,-?\d+$/.test(c)).map(c => c.split(',').map(Number));
+    const ms = new Set(cs.map(c => c[0]));
+    if (ms.size === 1) {
+      const m = cs[0][0];
+      s.grid = { 1: 12, 2: 22, 3: 34 }[m];
+      raw = cs.map(([, i, j]) => key(i, j));
+    } else {
+      s.grid = 12;
+      raw = [];
+      for (const [m, i, j] of cs) for (let b = 0; b < m; b++) for (let a = 0; a < m; a++) raw.push(key(m * i + a, m * j + b));
+    }
+  }
   if (!SIZES.some(z => z[0] === s.grid)) s.grid = DEFAULTS.grid;
+  if (!Array.isArray(s.tints) || s.tints.length !== 4 || !s.tints.every(c => /^#[0-9a-f]{6}$/i.test(c))) s.tints = DEFAULTS.tints.slice();
   return {
-    v: 5,
-    cells: Array.isArray(d && d.cells) ? d.cells.filter(c => typeof c === 'string' && /^-?\d+,-?\d+$/.test(c)) : [],
+    v: 8,
+    cells: [...new Set(raw.filter(c => /^-?\d+,-?\d+$/.test(c)))],
     text: typeof (d && d.text) === 'string' ? d.text : SAMPLE,
     s,
   };
@@ -148,7 +169,7 @@ function touchLayout() { app.dirtyLayout = true; app.needs = true; }
 app.set = (k, val) => {
   app.doc.s[k] = val;
   if (k === 'bg') applyTheme();
-  if (k === 'grid' || k === 'corners') touchGeom(); else touchLayout();
+  if (k === 'grid') touchGeom(); else touchLayout();
 };
 
 app.setText = str => {
@@ -243,8 +264,8 @@ async function exportImage(kind) {
   drawScene(c.getContext('2d'), {
     W, H, dpr: 1, s, board: b,
     view: { x: -b.x * scale, y: -b.y * scale, scale },
-    loops: app.loops, glyphs: app.layout ? app.layout.glyphs : [],
-    font: fontStr(), grid: false, transparent: png,
+    loops: app.loops, glyphs: app.layout ? app.layout.glyphs : [], tint: app.tint,
+    fonts: FONTS, grid: false, transparent: png,
   });
   const blob = await new Promise(res => c.toBlob(res, png ? 'image/png' : 'image/jpeg', 0.92));
   if (!blob) return toast('export failed');
@@ -253,10 +274,6 @@ async function exportImage(kind) {
 }
 
 // ---------------------------------------------------------------- geometry + layout
-
-function fontStr() {
-  return `${WEIGHT} ${letterSize()}px "${FONT}", monospace`;
-}
 
 function computeGeom() {
   const g = gridSize();
@@ -271,8 +288,9 @@ function computeGeom() {
   try { rings = insideRings(app.loops, g, 1); } catch (e) { console.warn('ring generation failed', e); }
   alignStarts(rings);
   rings.forEach(prepRing);
-  app.rings = rings;
-  app.groups = slotGroups(rings, live, g, app.doc.s.corners);
+  app.groups = slotGroups(rings, live, g);
+  for (const grp of app.groups) for (const sl of grp) sl.g = g;
+  app.live = live;
   app.liveCount = live.size;
   app.dirtyLayout = true;
 }
@@ -296,7 +314,24 @@ const updatePanelText = debounce(() => {
 function computeLayout() {
   const L = pour(app.groups, Array.from(app.doc.text), app.doc.s);
   app.layout = L;
+  app.tint = app.doc.s.color ? tintCells(L.glyphs) : null;
   updatePanelText();
+}
+
+// Colour every cell by the repeat its letter belongs to. Cells without a letter
+// (odd leftovers) borrow a neighbour's colour so the bands stay whole.
+// → [x, y, size, colour index] per cell, in world units
+function tintCells(glyphs) {
+  const g = gridSize(), at = new Map();
+  for (const gl of glyphs) at.set(key(Math.floor(gl.x / g), Math.floor(gl.y / g)), gl.copy % 4);
+  for (const k of app.live || []) {
+    if (at.has(k)) continue;
+    const [i, j] = k.split(',').map(Number);
+    for (const n of [key(i - 1, j), key(i, j - 1), key(i + 1, j), key(i, j + 1)]) {
+      if (at.has(n)) { at.set(k, at.get(n)); break; }
+    }
+  }
+  return [...at].map(([k, c]) => { const [i, j] = k.split(',').map(Number); return [i * g, j * g, g, c]; });
 }
 
 // ---------------------------------------------------------------- view: centred, whole pixels, no zoom
@@ -332,8 +367,8 @@ function draw() {
   const s = app.doc.s;
   drawScene(ctx, {
     W: canvas.width, H: canvas.height, dpr: app.dpr, view: app.view, s: { ...s, grid: gridSize(), colors: colorsOf(s) }, board: board(),
-    loops: app.loops, glyphs: app.layout ? app.layout.glyphs : [],
-    font: fontStr(), grid: true, overlay,
+    loops: app.loops, glyphs: app.layout ? app.layout.glyphs : [], tint: app.tint,
+    fonts: FONTS, grid: true, overlay,
   });
 }
 
@@ -420,7 +455,10 @@ async function start() {
     history.replaceState(null, '', location.pathname + location.search);
   }
   if (!doc) {
-    try { const saved = localStorage.getItem(STORE); if (saved) doc = JSON.parse(saved); } catch {}
+    try {
+      const saved = [STORE, ...OLD_STORES].map(k => localStorage.getItem(k)).find(Boolean);
+      if (saved) doc = JSON.parse(saved);
+    } catch {}
   }
   setDoc(doc ? normalize(doc) : freshDoc());
 
