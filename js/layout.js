@@ -35,15 +35,18 @@ export function slotGroups(rings, cells, g) {
   const keyAt = (x, y) => Math.floor(x / g) + ',' + Math.floor(y / g);
 
   for (const r of rings) {
+    // a ring opens on its start corner, so its first letter sits there upright;
+    // every other corner takes the letter that arrives at it, and the ring
+    // closes on the cell just before the start
     const slots = [];
-    for (const run of r.runs) {
-      for (let s = g; s <= run.L + 0.01; s += g) {
+    r.runs.forEach((run, k) => {
+      for (let s = k ? g : 0; s <= run.L + 0.01; s += g) {
         const x = run.a[0] + run.dx * s, y = run.a[1] + run.dy * s, key = keyAt(x, y);
         if (used.has(key) || !cells.has(key)) continue;
         used.add(key);
         slots.push({ x, y, a: run.ang });
       }
-    }
+    });
     if (slots.length) groups.push(slots);
   }
 
